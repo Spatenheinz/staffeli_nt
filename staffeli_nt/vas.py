@@ -43,7 +43,8 @@ class Assignment:
         self.show_points = bool(show_points) if show_points is not None else True
         self.onlineTA = onlineTA
         for task in self.tasks:
-            self.total_points += task.points
+            if task.points is not None:
+                self.total_points += task.points
 
     def format_md(self, sheet):
         assert isinstance(sheet, GradingSheet)
@@ -187,18 +188,16 @@ class Solution:
         self.points = points
         self.feedback = feedback
 
-        if isinstance(grade, int) or isinstance(grade, float):
+        if isinstance(grade, (int, float)):
             assert grade <= points, 'too many points given %s/%s' % (grade, points)
 
     def serialize(self):
 
-        inner = [
-            ('grade', self.grade),
-            ('feedback', self.feedback)
-        ]
+        inner = [ ('feedback', self.feedback) ]
 
         if self.points is not None:
-            inner.append(('points', self.points))
+            inner.extend((('grade', self.grade),
+                          ('points', self.points)))
 
         if self.bonus is not None:
             inner.append(('bonus', self.bonus))
@@ -209,6 +208,9 @@ class Solution:
 
     def get_grade(self, task: Task, with_bonus=True):
         bonus = 0 if (self.bonus is None) or (not with_bonus) else self.bonus
+
+        if self.points is None:
+            return 0
 
         if self.grade is not None:
             return self.grade + bonus
@@ -258,8 +260,7 @@ class GradingSheet:
                 return None
         if ass.passing_points is not None:
             return 1 if total >= ass.passing_points else 0
-        else:
-            return total
+        return total
 
     def is_graded(self, ass: Assignment):
         return self.get_grade(ass) is not None
@@ -287,7 +288,7 @@ def parse_sheet(data):
                 name = k,
                 bonus = v['bonus'] if 'bonus' in v else None,
                 points = v['points'] if 'points' in v else None,
-                grade = v['grade'],
+                grade = v['grade'] if 'points' in v else None,
                 feedback = v['feedback']  if 'feedback' in v else None
             )
             for (k, v) in flat(struct['solutions'])

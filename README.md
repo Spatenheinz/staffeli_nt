@@ -11,7 +11,11 @@ clones compatible with git.
 
 We recommend that you create a local directory ``canvas``,
 ``absalon``, or similar, for all of you Canvas-related local course
-clones. Staffeli needs some initial help to be able to login with your
+clones.
+
+Obtain your personal Canvas token
+---------------------------------
+Staffeli needs some initial help to be able to login with your
 credentials. You need to [generate a
 token](https://guides.instructure.com/m/4214/l/40399-how-do-i-obtain-an-api-access-token-for-an-account)
 for Staffeli to use, and save it in your home directory in a file with
@@ -61,28 +65,38 @@ Fetch Submissions for an Assignment
 -----------------------------------
 There are multiple options for fetching submissions.
 
-The general command is `download.py <course_id> <template.yaml> <assignment-dir> [flags]`, where
+The general command is `<staffeli_nt_path>/download.py <course_id> <template.yaml> <assignment-dir> [flags]`, where
+- `<staffeli_nt_path>` is the path to the directory where `staffeli_nt` is located, i.e. where the files `download.py` and `upload.py` etc. can be found.
 - `<course_id>` is the canvas `course_id` for the course.
 - `<template.yaml>` is the template file to use when generating the `grade.yml` file for each submission
-- `<assignment_dir>` is a *non-existing* directory, that staffeli will create and store the submissions in. 
+- `<assignment_dir>` is a *non-existing* directory, that staffeli will create and store the submissions in.
 
-To fetch **all** submissions from the course with id 42376, using the template-file `ass1-template.yml` and create a new directory "ass1dir" to store the submissions in:
+**Windows**:  
+Since `staffeli_nt` is written in `python3`, you will need to invoke it via your `python3` interpreter. 
+Example: `python <staffeli_nt_path>/download.py <course_id> <template.yml> <assignment-dir> [flags]`
 
-    $ <staffeli_nt_path>/download.py 42376 ass1-template.yml ass1dir
+**Fetching all submissions**:  
+To fetch **all** submissions from the course with id `12345`, using the template-file `ass1-template.yml` and create a new directory "ass1dir" to store the submissions in:
 
-This will present you with a list of assignments for the course, where you will interactively choose which assignment to fetch. 
+    $ <staffeli_nt_path>/download.py 12345 ass1-template.yml ass1dir
+
+This will present you with a list of assignments for the course, where you will interactively choose which assignment to fetch.
+For each submission, a directory will be created in `<assignment_dir>`, in which the handed-in files of the submission will be stored, alongside a file `grade.yml` generated form the `<template.yml>` for a TA to fill out during grading of the assignment.
+Submission comments, if any, will be downloaded as well, and stored alongside `grade.yml` and the files of the hand-in.
+
+*In case the student hands in a file called `grade.yml` it will be overwritten by staffeli. If the student hands in a file called `submission_comments.txt` and has written submission comments on the submission, the downloaded submission comments will be renamed.*
 
 ### Flags
 #### Fetching all submissions for a section
-What we call "Hold", canvas/absalon calls sections. 
-To fetch all submissions for an assignment, where the student belongs to a given section:
+What we call "Hold", canvas/absalon calls sections.
+To fetch all submissions for an assignment, where the student belongs to a given section, and the `<course_id>` is `12345`:
 
-    $ <staffeli_nt_path>/download.py 42376 ass1-template.yml ass1dir --select-section
+    $ <staffeli_nt_path>/download.py 12345 ass1-template.yml ass1dir --select-section
 
-This will present you with a list of assignments for the course, where you will interactively choose which assignment to fetch, followed by a list of sections for you to choose from. 
+This will present you with a list of assignments for the course, where you will interactively choose which assignment to fetch, followed by a list of sections for you to choose from.
 
 #### Fetching specific submissions (based on kuid)
-It is possible to fetch specific submissions based on a list of kuids. 
+It is possible to fetch specific submissions based on a list of kuids.
 To do this, create a YAML-file with the following format:
 
 ``` yaml
@@ -97,13 +111,13 @@ TA2:
 
 To then fetch all submissions for an assignment for a given TA:
 
-    $ <staffeli_nt_path>/download.py 42376 ass1-template.yml ass1dir --select-ta ta_list.yml
+    $ <staffeli_nt_path>/download.py <course_id> ass1-template.yml ass1dir --select-ta ta_list.yml
 
-where `ta_list.yml` is a YAML-file following the above format. 
+where `ta_list.yml` is a YAML-file following the above format.
 
 
-This will present you with a list of assignments for the course, where you will interactively choose which assignment to fetch, followed by the list of TA's from your `ta_list.yml` file. 
-Selecting a TA, will fetch submissions from each `kuid` in the file, associated with the chosen TA, i.e. selecting `TA1` will fetch submission from `kuid1`, `kuid2` and `kuid3`. 
+This will present you with a list of assignments for the course, where you will interactively choose which assignment to fetch, followed by the list of TA's from your `ta_list.yml` file.
+Selecting a TA, will fetch submissions from each `kuid` in the file, associated with the chosen TA, i.e. selecting `TA1` will fetch submission from `kuid1`, `kuid2` and `kuid3`.
 
 
 ### Automatically running onlineTA for each submission
@@ -111,7 +125,14 @@ In the `template.yml`-file you can add a field:
 
 `onlineTA: https://address.of.onlineTA.dk/grade/assignmentName`
 
-This will (attempt to) run onlineTA for each downloaded submission. 
+This will (attempt to) run onlineTA for each downloaded submission.
+
+
+#### Fetching only ungraded submissions (resubs)
+It is possile to only fetch submissions that are either ungraded or have a score < 1.0.
+Currently this is implemented specifically for the PoP-course and might not be available in the current form in later releases. 
+This can be achieved by appending the `--resub` flag to any use of the `download.py`-script.
+
 
 
 Upload Feedback and grades
@@ -164,17 +185,17 @@ tasks:
 
 ### Optional fields
 
-The template files support a few optional fields. 
+The template files support a few optional fields.
 
-- `passing-points: N`:  
+- `passing-points: N`:
 Adding this field will have the effect, that the grade posted is `1` if the total sum of points is
 greater than or equal to `passing-points`, and `0` otherwise.
-- `show-points: BOOL`  
-Setting show-points to `false` will exclude the `points/grade` from the generated `feedback.txt` files. 
-Use this, if you do not want the students to see the points-per-task, but only receive an overall grade. 
+- `show-points: BOOL`
+Setting show-points to `false` will exclude the `points/grade` from the generated `feedback.txt` files.
+Use this, if you do not want the students to see the points-per-task, but only receive an overall grade.
 
-- `onlineTA: ADDR`  
-Include this field to (attempt to) run onlineTA at address `ADDR` for each submission, when downloading submissions. 
+- `onlineTA: ADDR`
+Include this field to (attempt to) run onlineTA at address `ADDR` for each submission, when downloading submissions.
 
 
 ### Fully fledged example template
@@ -188,10 +209,10 @@ tasks:
   - megaAssignmentGeneral:
       title: Mega assignment - General comments and adherence to hand-in format requirements
       points: 100
-      rubric: | 
+      rubric: |
         [*] You should spell check your assignments before handing them in
-        [-] You are using the charset iso-8859-1. Please move to the modern age. 
-        [-] Your zip-file contains a lot of junk. Please be aware of what you hand in. 
+        [-] You are using the charset iso-8859-1. Please move to the modern age.
+        [-] Your zip-file contains a lot of junk. Please be aware of what you hand in.
 
   - megaAssignmentTask1:
       title: Task 1
@@ -200,15 +221,20 @@ tasks:
         [+] Your implementation follows the API
         [-] Your implementation does not follow the API
         [+] Your tests are brilliant
-        [-] Your tests are not tests, just print-statements. 
-            This is equivalent to an exam without an examinator, where you shout 
+        [-] Your tests are not tests, just print-statements.
+            This is equivalent to an exam without an examinator, where you shout
             in a room for half an hour and give yourself the grade 12.
 
   - megaAssignmentTask2:
       title: Task 2
       points: 2
       rubric: |
-        [+] Very good points. 
-        [+] Very good points. However, I disagree with ... 
-        [-] I fail to comprehend you answer to this task. 
+        [+] Very good points.
+        [+] Very good points. However, I disagree with ...
+        [-] I fail to comprehend you answer to this task.
+
+  - megaAssignmentBonusTask:
+      title: Bonus tasks that do not give points, or another option for general comments
+      rubric: |
+        [*] You did extra work! It won't help you though.
 ```

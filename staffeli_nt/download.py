@@ -41,6 +41,19 @@ def ta_file(args):
             return args[idx+1]
     return ""
 
+
+def grab_submission_comments(submission):
+    if (len(submission.submission_comments) == 0):
+        return []
+    comments = []
+    for comment in submission.submission_comments:
+        date = comment['created_at']
+        c = comment['comment']
+        name = comment['author_name']
+        comments.append("{0} - {1}: {2}".format(date, name, c))
+    comments = "\n".join(sorted(comments))
+    return comments
+
 if __name__ == '__main__':
     course_id = sys.argv[1]
     path_template = sys.argv[2]
@@ -79,8 +92,11 @@ if __name__ == '__main__':
     ta = None
     if select_ta:
         with open(select_ta, 'r') as f:
-            (tas,stud) = parse_students_and_tas(f)
-
+            try:
+                (tas,stud) = parse_students_and_tas(f)
+            except Exception as e:
+                print(f"Failed to parse ta-list. Do all TA's have at least one student attached?\nexiting.")
+                sys.exit(1)
         print('\nTAs:')
         for n, ta in enumerate(tas):
             print('%2d :' % n, ta)
@@ -92,7 +108,6 @@ if __name__ == '__main__':
         for i in stud[index]:
             students += course.get_users(search_term=i,enrollment_type=['student'],
                                         enrollment_state='active')
-
     section = None
     if select_section:
         sections = sort_by_name(course.get_sections())
@@ -118,14 +133,15 @@ if __name__ == '__main__':
     submissions = []
 
     if select_ta:
-        submissions = [assignment.get_submission(s.id) for s in students]
+        submissions = [assignment.get_submission(s.id, include=['submission_comments']) for s in students]
     elif section:
         s_ids = [s['id'] for s in section.students if all([ e['enrollment_state'] == 'active'
                                                             for e in s['enrollments']])]
         submissions = section.get_multiple_submissions(assignment_ids=[assignment.id],
-                                                       student_ids=s_ids)
+                                                       student_ids=s_ids,
+                                                       include=['submission_comments'])
     else:
-        submissions = assignment.get_submissions()
+        submissions = assignment.get_submissions(include=['submission_comments'])
 
     for submission in submissions:
         user = course.get_user(submission.user_id)
@@ -154,7 +170,8 @@ if __name__ == '__main__':
                         except KeyError:
                             handins[uuid] = {
                                 'files': files,
-                                'students': [user]
+                                'students': [user],
+                                'comments': grab_submission_comments(submission)
                             }
 
 
@@ -169,7 +186,8 @@ if __name__ == '__main__':
                 except KeyError:
                     handins[uuid] = {
                         'files': files,
-                        'students': [user]
+                        'students': [user],
+                        'comments': grab_submission_comments(submission)
                     }
         else:
             # empty handin
@@ -192,6 +210,12 @@ if __name__ == '__main__':
         base = os.path.join(home, name)
         os.mkdir(base)
 
+        # Count number of zip-files in handin
+        num_zip_files = sum([1 if ".zip" in x['filename'].lower() or x['mime_class'] == 'zip' else 0 for x in handin['files']])
+        if num_zip_files > 1:
+            print(f"Submission contains {num_zip_files} files that look like zip-files.\nWill attempt to unzip into separate directories.")
+            if template.onlineTA is not None:
+                print("Will not submit to OnlineTA, due to multiple zip-files") 
         # download submission
         for attachment in handin['files']:
             # download attachment
@@ -204,18 +228,26 @@ if __name__ == '__main__':
             # unzip attachments
             if attachment['mime_class'] == 'zip':
                 unpacked = os.path.join(base, 'unpacked')
+                # Some students might hand in multiple zip-files
+                # if they do, unpack those files into uniquely-named directories
+                if (num_zip_files > 1 or os.path.exists(unpacked)):
+                    unpacked = os.path.join(base, "{0}_{1}".format(filename, '_unpacked'))
+                    print(f"Attempting to unzip {filename} into {unpacked}")
                 os.mkdir(unpacked)
                 try:
                     with zipfile.ZipFile(path, 'r') as zip_ref:
                         try:
                             zip_ref.extractall(unpacked)
-                            # Run through onlineTA
-                            if template.onlineTA is not None:
+                            # Run through onlineTA, if the template gives a url
+                            # and we have exactly 1 zip-file
+                            if template.onlineTA is not None and num_zip_files == 1:
                                 run_onlineTA(base, unpacked, template.onlineTA)
                         except NotADirectoryError:
                             print(f"Attempted to unzip into a non-directory: {name}")
                 except BadZipFile:
                     print(f"Attached archive not a zip-file: {name}")
+                except Exception as e:
+                    print(f"Error when unzipping file {filename}.\nError message: {e}")
         # remove junk from submission directory
         junk = [
             '.git',
@@ -238,6 +270,23 @@ if __name__ == '__main__':
         with open(grade, 'w') as f:
             yaml.dump(sheet.serialize(), f)
 
+        # Dump submission comments
+        # empty python lists evaluate as False, so
+        # we only dump if we have comments
+        if (handin['comments']):
+            comment_path = os.path.join(base, 'submission_comments.txt')
+            # Be super safe and check if the student handed in a file named 'submission_comments.txt'
+            # If it does exist, do some yeehaw renaming of the downloaded submission comments
+            # from canvas
+            if (os.path.exists(comment_path)):
+                fname_i : int = 0
+                while(os.path.exists(comment_path)):
+                    fname_i += 1
+                    comment_fname = 'submission_comments({0}).txt'.format(fname_i)
+                    comment_path = os.path.join(base, comment_fname)
+
+            with open(comment_path, 'w', encoding='utf-8-sig') as f:
+                f.write(handin['comments'])
 
     # create a list of students with empty handins
     with open(empty, 'w') as f:
